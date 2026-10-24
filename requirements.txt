@@ -1,0 +1,7 @@
+gradio==5.49.1
+boto3==1.43.118
+python-dotenv==1.1.1
+langchain==1.4.6
+langchain-aws==1.9.0
+langsmith==0.14.12
+
