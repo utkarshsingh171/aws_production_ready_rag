@@ -1,40 +1,15 @@
-```text
-# Environment variables and secrets
+
+.git
+.venv
+venv
+__pycache__
+*.pyc
 .env
 .env.*
 !.env.example
-.aws/
-
-# Python cache and virtual environments
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-venv/
-env/
-
-# Git
-.git/
-.gitignore
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-
-# Logs
-*.log
-logs/
-
-# Tests and coverage artifacts
-.pytest_cache/
-.coverage
-htmlcov/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Documentation and local data not required at runtime
+.pytest_cache
+.mypy_cache
+dist
+build
 README.md
-```
+pyproject.toml

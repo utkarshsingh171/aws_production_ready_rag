@@ -27,8 +27,8 @@ demo = gr.ChatInterface(
     fn=chat,
     title="AI Engineering & Machine Learning Tutor",
     description="Ask questions about AI/ML concepts and AI engineering.",
-    chatbot=gr.Chatbot(),
-    
+    chatbot=gr.Chatbot(type="messages"),
+    type="messages",
 )
 
 if __name__ == "__main__":

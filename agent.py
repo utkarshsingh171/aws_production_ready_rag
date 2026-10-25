@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
+import traceback
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
 load_dotenv()
 
 # AWS configuration
@@ -261,10 +266,15 @@ async def get_agent_response_stream(question: str, chat_history=None):
                 yield text
 
     except Exception as exc:
-        print(f"[RAG ERROR] {type(exc).__name__}: {exc}", flush=True)
+        print(
+                f"[RAG ERROR] {type(exc).__name__}: {exc}",
+            flush=True
+        )
+        traceback.print_exc()
+
         yield (
             "Sorry, I couldn't complete the request because of a "
-            "server or AI service error. Please try again."
+            "server or AI service error. Please check the server logs."
         )
 
 
