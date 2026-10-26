@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
 
 # Copy application files after installing dependencies.
-COPY app.py agent.py ./
+COPY app.py agent.py guardrails.py gateway.py ./
 
 EXPOSE 3000
 
