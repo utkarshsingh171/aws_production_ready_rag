@@ -4,4 +4,10 @@ python-dotenv==1.1.1
 langchain==1.4.6
 langchain-aws==1.9.0
 langsmith==0.14.12
+litellm>=1.70.0,<2.0.0
+langchain-litellm
+
+# NEW: Required by guardrails.py and gateway.py
+langchain-core>=0.3.0
+langgraph>=0.2.0
 
