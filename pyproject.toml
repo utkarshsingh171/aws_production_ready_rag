@@ -7,15 +7,18 @@ authors = [
     { name = "utkarshsingh171", email = "kumarutkarsh835@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = [
-    "requests",
-    "langchain",
-    "langchain-aws",
-    "dotenv",
-    "boto3",
-    "gradio",
-    "langsmith"
-]
+  dependencies = [
+      "requests>=2.28.0",
+      "langchain>=1.0,<2.0",
+      "langchain-aws>=1.0",
+      "python-dotenv>=1.0",
+      "boto3>=1.20",
+      "gradio>=5.0",
+      "langsmith>=0.1",
+      "langchain-litellm>=0.1",
+      "langchain-core>=0.1",
+      "langgraph>=0.1"
+  ]
 
 [project.scripts]
 genai-rag = "genai_rag:main"
