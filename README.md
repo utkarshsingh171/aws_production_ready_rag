@@ -159,7 +159,7 @@ The runtime identity needs permission to retrieve from the configured Bedrock Kn
 
 ```bash
 git clone https://github.com/utkarshsingh171/aws_production_ready_rag.git
-cd aws_production_ready_rag-main
+cd genai_RAG
 ```
 
 If your repository URL or directory name differs, adjust the commands accordingly.
@@ -252,8 +252,7 @@ Bug reports, suggestions, and pull requests are welcome. For substantial changes
 
 ## License
 
-No license is currently specified in the repository. Add a `LICENSE` file if you intend to grant others permission to reuse, modify, or distribute the project.
-
+No license is currently specified in the repository.
 ---
 
 **Built with Python, LangChain, Amazon Bedrock, LiteLLM, Gradio, and Docker.**
