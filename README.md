@@ -1,134 +1,168 @@
 # AWS Production-Ready RAG Chatbot
 
-An AI Engineering and Machine Learning tutor built with **Retrieval-Augmented Generation (RAG)** and deployed as a containerized application on AWS. The chatbot retrieves relevant passages from an Amazon Bedrock Knowledge Base and uses an Amazon Bedrock foundation model to generate grounded, streaming answers through a Gradio chat interface.
+A streaming **AI Engineering and Machine Learning tutor** built with Retrieval-Augmented Generation (RAG), Amazon Bedrock Knowledge Bases, LangChain, and Gradio. The application retrieves relevant passages from a configured Knowledge Base and uses a Bedrock model to generate answers grounded in that context.
+
+The project also includes input/output guardrails, personally identifiable information (PII) redaction, prompt-injection checks, model routing with optional fallback, and per-session usage limits.
 
 ## Overview
 
-This project demonstrates an end-to-end cloud deployment of a RAG application, including document retrieval, LLM integration, containerization, and AWS hosting.
-
-The chatbot is designed to answer questions related to:
+The chatbot is intended for questions about:
 
 - Artificial Intelligence and Machine Learning
-- Deep Learning and Data Science concepts used in ML
-- Large Language Models (LLMs) and Generative AI
-- Retrieval-Augmented Generation (RAG)
+- Deep Learning and data science concepts used in ML
+- LLMs and Generative AI
+- RAG, embeddings, and retrieval
 - AI agents and AI engineering
 
-A lightweight topic check rejects out-of-scope questions before making a Knowledge Base retrieval request or invoking the language model.
+A lightweight keyword-based topic check rejects out-of-scope questions before retrieval and model invocation. This is a heuristic, not a semantic classifier.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    U[User] --> ALB[Internet-facing Application Load Balancer]
-    ALB --> ECS[AWS ECS Fargate Task]
-    ECS --> G[Gradio Chat UI]
-    G --> A[Python RAG Application]
-    A --> S{AI/ML topic check}
-    S -- Out of scope --> R[Scope rejection message]
-    S -- In scope --> KB[Amazon Bedrock Knowledge Base]
-    KB --> V[Hybrid retrieval: up to 3 results]
-    V --> P[Build prompt with retrieved passages and chat history]
-    P --> L[Amazon Bedrock foundation model]
-    L --> ST[Stream generated response]
-    ST --> U
-    ECR[Amazon ECR container image] -. Image deployment .-> ECS
+    U[User] --> UI[Gradio Chat Interface]
+    UI --> APP[app.py]
+    APP --> AG[agent.py: response pipeline]
+    AG --> IG[Input checks: length, prompt injection, PII]
+    IG --> SC{AI/ML scope check}
+    SC -- Out of scope --> REJ[Scope rejection]
+    SC -- In scope --> LIM[Per-session limits and budget]
+    LIM --> KB[Amazon Bedrock Knowledge Base]
+    KB --> RET[Retrieve up to 3 passages: HYBRID search]
+    RET --> LC[LangChain agent and guardrail middleware]
+    LC --> GW[gateway.py: LiteLLM Router]
+    GW --> BM[Amazon Bedrock model]
+    GW -. Optional configured fallback .-> FB[Fallback model]
+    BM --> SR[Stream response and redact PII]
+    FB --> SR
+    SR --> UI
+    AG --> USG[Token and cost estimation]
 ```
 
 ### Request flow
 
-1. A user sends a question through the Gradio chat interface.
-2. The application checks whether the question is within the supported AI/ML topics.
-3. For an accepted question, it retrieves up to three relevant passages from the configured Bedrock Knowledge Base using hybrid search.
-4. The retrieved passages and recent conversation history are included in the prompt.
-5. The Bedrock model generates an answer, which is streamed back to the chat interface.
-6. Out-of-scope questions are rejected without a Knowledge Base retrieval or model call.
+1. The user submits a question through the Gradio chat interface.
+2. Input checks enforce a maximum input length, detect common prompt-injection patterns, and redact recognized PII.
+3. A keyword-based scope check allows supported AI/ML questions and relevant short follow-ups.
+4. Per-session request limits and a daily estimated-cost budget are checked.
+5. The app retrieves up to three passages from the configured Bedrock Knowledge Base using hybrid search.
+6. Retrieved passages and recent conversation history are added to the model input. Retrieved passages are treated as reference data rather than instructions.
+7. A LangChain agent calls the configured model through a LiteLLM Router. The router retries failures and can use a fallback model when configured.
+8. Output middleware and streaming redaction checks are applied while the answer is sent to the Gradio interface.
+9. Token usage and estimated cost are recorded in application logs.
 
-## Tech Stack
+## Key features
+
+- **RAG:** Uses passages retrieved from Amazon Bedrock Knowledge Bases to ground answers.
+- **Hybrid retrieval:** Requests up to three Knowledge Base results using the `HYBRID` search type.
+- **Streaming UI:** Streams model output into the Gradio chat interface.
+- **Conversation context:** Includes recent text-based chat history in the prompt.
+- **Input guardrails:** Checks input length and common prompt-injection patterns.
+- **PII redaction:** Recognizes and redacts patterns such as email addresses, phone numbers, AWS access-key patterns, and other identifiers.
+- **Output guardrails:** Uses LangChain agent middleware and streaming redaction to check model output.
+- **Model gateway:** Uses LiteLLM Router through `langchain-litellm`, with retries and an optional fallback deployment.
+- **Usage controls:** Enforces per-session request limits, requests-per-minute limits, and an estimated daily cost budget.
+- **Container support:** Includes a Dockerfile for running the application on port `3000`.
+- **Optional tracing:** Supports LangSmith configuration through environment variables.
+
+> **Security and production note:** These guardrails are defense-in-depth measures, not a guarantee against prompt injection, data leakage, or unsafe output. The topic filter is keyword-based, and the included limiter and cost estimator are in-process application controls rather than a distributed quota service. Review and test the application before exposing it to public traffic.
+
+## Tech stack
 
 | Component | Technology |
 |---|---|
 | Language | Python 3.12 |
 | Chat interface | Gradio |
-| LLM orchestration | LangChain |
-| Foundation model | Amazon Bedrock via `ChatBedrockConverse` |
+| Agent orchestration | LangChain agents and LangGraph middleware |
+| Model gateway | LiteLLM Router via `langchain-litellm` |
+| Foundation model | Amazon Bedrock through LiteLLM's Bedrock Converse provider |
 | Retrieval | Amazon Bedrock Knowledge Bases |
 | Retrieval mode | Hybrid search |
 | AWS SDK | Boto3 |
+| Guardrails | Custom `guardrails.py` checks and middleware |
+| Tracing (optional) | LangSmith |
 | Containerization | Docker |
-| Container registry | Amazon Elastic Container Registry (ECR) |
-| Container hosting | Amazon ECS with AWS Fargate |
-| Traffic routing | Application Load Balancer (ALB) |
-| Configuration | Environment variables and `python-dotenv` |
 
-## Key Features
-
-- **Retrieval-Augmented Generation:** Uses retrieved Knowledge Base passages to ground responses.
-- **Hybrid retrieval:** Requests up to three results using the Bedrock Knowledge Bases hybrid search configuration.
-- **Streaming responses:** Sends generated text to the Gradio UI as model output arrives.
-- **Conversation context:** Includes recent user and assistant messages when building the prompt.
-- **Topic filtering:** Rejects unsupported questions before retrieval and model invocation.
-- **Prompt-injection-aware instructions:** Treats retrieved passages as reference data, not instructions.
-- **Containerized deployment:** Packages the app and dependencies into a Docker image.
-- **Cloud hosting architecture:** Supports deployment through ECR and ECS Fargate behind an ALB.
-
-> **Security note:** The prompt's instruction to ignore commands inside retrieved passages is a defense-in-depth measure, not a complete prompt-injection or security guarantee. The keyword-based topic filter is also a lightweight heuristic rather than a robust semantic classifier.
-
-## Project Structure
+## Project structure
 
 ```text
-aws_production_ready_rag/
+aws_production_ready_rag-main/
 ├── app.py              # Gradio chat UI and streaming handler
-├── agent.py            # Topic check, retrieval, prompt construction, and LLM calls
+├── agent.py            # Scope check, Knowledge Base retrieval, prompt and agent flow
+├── gateway.py          # LiteLLM Router, retries, fallback and usage limits/cost estimation
+├── guardrails.py       # Input/output checks, prompt-injection detection and PII redaction
 ├── dockerfile          # Docker image definition
 ├── requirements.txt    # Python dependencies
-├── pyproject.toml      # Project metadata
-├── uv.lock             # Locked dependency information for uv
-├── .dockerignore       # Files excluded from Docker build context
-└── .gitignore          # Git exclusions
+├── pyproject.toml      # Project metadata and dependencies
+├── .env_example        # Example environment configuration
+├── .dockerignore       # Docker build exclusions
+├── .gitignore          # Git exclusions
+└── src/
+    └── genai_rag/
+        └── __init__.py # Package entry-point placeholder
 ```
 
 ## Prerequisites
 
-Before running the application, make sure you have:
-
-- Python 3.12+ or Docker
+- Python 3.12 or Docker
 - An AWS account with access to Amazon Bedrock
 - An existing Amazon Bedrock Knowledge Base with documents ingested and indexed
-- An Amazon Bedrock model available in your selected AWS Region
-- AWS credentials configured locally or an IAM role attached to the deployed ECS task
-- Docker installed if building or running the container
+- A Bedrock model enabled and available in the selected AWS Region
+- AWS credentials configured using an AWS-supported credential provider
+- Required IAM permissions to retrieve from the Knowledge Base and invoke the selected model
 
-The Knowledge Base and its data source are assumed to exist already; this repository does not create or ingest them automatically.
+The repository expects the Knowledge Base and its data source to already exist; it does not create or ingest them.
 
 ## Configuration
 
-Create a `.env` file in the project root for local development:
+Copy `.env_example` to `.env` in the project root and fill in the values you need:
 
 ```env
 AWS_REGION=ap-southeast-2
 BEDROCK_KNOWLEDGE_BASE_ID=your_knowledge_base_id
 BEDROCK_MODEL_ID=your_bedrock_model_id
+
+# Optional: full LiteLLM model string, for example:
+# FALLBACK_MODEL=openai/gpt-4o-mini
+
+# Optional router limits
+DEPLOYMENT_RPM=60
+DEPLOYMENT_TPM=100000
+
+# Optional per-session limits
+USER_RPM=5
+USER_DAILY_BUDGET_USD=0.50
+SESSION_MAX_REQUESTS=4
+
+# Optional fallback prices if LiteLLM has no model pricing
+COST_INPUT_PER_1K=0.003
+COST_OUTPUT_PER_1K=0.015
+
+# Optional LangSmith tracing
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=your_langsmith_api_key
+LANGSMITH_PROJECT=your_project_name
 ```
 
-Replace the example values with your own AWS Region, Knowledge Base ID, and supported Bedrock model ID.
+These are examples and defaults, not required values for every deployment. The application requires `AWS_REGION` (defaults to `ap-southeast-2` in code), `BEDROCK_KNOWLEDGE_BASE_ID`, and `BEDROCK_MODEL_ID`. `FALLBACK_MODEL` is optional. Check current provider pricing before setting cost-estimation values.
 
-**Do not commit `.env` files, AWS access keys, or other credentials to GitHub.** For local development, configure credentials using an AWS-supported method, such as an AWS profile or environment variables. For ECS, prefer a task IAM role and avoid embedding long-lived AWS keys in the image.
+For AWS authentication, prefer an AWS profile locally or an IAM role in hosted environments. Although the example file shows AWS credential variables, do not commit credentials or put long-lived secrets in a Docker image. Keep `.env` private.
 
-### Required AWS permissions
+### IAM permissions
 
-The runtime identity needs permission to retrieve data from the configured Bedrock Knowledge Base and invoke the selected Bedrock model. Exact permissions depend on your model, Knowledge Base setup, and account configuration. Apply least-privilege IAM policies.
+The runtime identity needs permission to retrieve from the configured Bedrock Knowledge Base and invoke the selected Bedrock model. Exact actions depend on your setup. Follow least-privilege IAM practices.
 
-## Run Locally
+## Run locally
 
 ### 1. Clone the repository
 
 ```bash
 git clone https://github.com/utkarshsingh171/aws_production_ready_rag.git
-cd genai_RAG
+cd aws_production_ready_rag-main
 ```
 
-If your repository has a different name or URL, replace the clone URL and directory accordingly.
+If your repository URL or directory name differs, adjust the commands accordingly.
 
 ### 2. Create and activate a virtual environment
 
@@ -152,17 +186,17 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure AWS access
+### 4. Configure environment variables and AWS access
 
-Configure your AWS credentials using an AWS profile or another supported credential provider. Verify that the identity has the necessary Bedrock permissions.
+Copy `.env_example` to `.env`, set the Knowledge Base and model identifiers, and configure AWS credentials using an AWS-supported method. Ensure the active identity has the required permissions.
 
-### 5. Start the chatbot
+### 5. Start the app
 
 ```bash
 python app.py
 ```
 
-The application listens on port **3000** and binds to `0.0.0.0`. Open the local Gradio URL printed in the terminal.
+The app binds to `0.0.0.0` on port `3000`. Open `http://localhost:3000` in your browser.
 
 ## Run with Docker
 
@@ -172,73 +206,54 @@ Build the image from the repository root:
 docker build -f dockerfile -t aws-production-ready-rag .
 ```
 
-Run the container and pass configuration through environment variables:
+Run it with the required configuration:
 
 ```bash
 docker run --rm -p 3000:3000 \
-  -e AWS_REGION=ap-southeast-2 \
-  -e BEDROCK_KNOWLEDGE_BASE_ID=your_knowledge_base_id \
-  -e BEDROCK_MODEL_ID=your_bedrock_model_id \
+  --env-file .env \
   aws-production-ready-rag
 ```
 
-Make sure AWS credentials are available securely to the container. For local development, you may use a configured AWS profile and mount its credentials directory if appropriate for your environment. Do not bake credentials into the Docker image.
+Make sure credentials are available securely to the container, for example through an appropriate AWS credential setup. Do not bake secrets into the image. Then open `http://localhost:3000`.
 
-Open `http://localhost:3000` in your browser.
+## Configuration and operational notes
 
-## AWS Deployment
+- Retrieval makes one Bedrock Knowledge Base request for each accepted question.
+- The app requests up to three retrieved results and streams a model response.
+- The gateway configures two retries and a 60-second timeout. If `FALLBACK_MODEL` is set, the router is configured to use it when the primary deployment fails.
+- Rate limits, total session request limits, and estimated spending are stored in process memory. They reset when the process restarts and are not shared across multiple app instances.
+- Cost figures are estimates based on token counts and LiteLLM pricing data, or the configured fallback rates. They may not match the final AWS bill.
+- Response latency depends on retrieval, model response time, network conditions, AWS Region, and model selection.
 
-The deployment architecture uses Amazon ECR to store the image, ECS Fargate to run the container, and an internet-facing Application Load Balancer to route HTTP traffic to the service.
+## Current limitations
 
-### Deployment outline
+- The AI/ML topic check uses keyword matching and can incorrectly reject relevant questions or accept unrelated questions containing matching terms.
+- Knowledge Base setup and document ingestion are external prerequisites.
+- Source locations are included in retrieved passage text, but the UI does not provide a dedicated source-citation panel.
+- Prompt-injection detection uses pattern matching and cannot catch every attack.
+- PII redaction is pattern-based and may miss some sensitive information or redact ordinary text incorrectly.
+- Usage limits and cost tracking are in-memory, so they are not durable or globally consistent across replicas.
+- Authentication, persistent user accounts, persistent conversation storage, and a formal evaluation suite are not included.
+- A Dockerfile is provided, but production hardening, HTTPS, centralized secrets, health checks, monitoring, and deployment automation must be configured for the target environment.
 
-1. **Configure Amazon Bedrock:** Confirm the Knowledge Base is populated and the chosen model is available in the target Region.
-2. **Create an ECR repository:** Use a repository to store the Docker image.
-3. **Build and test the image:** Build the image locally and verify the app starts on port 3000.
-4. **Push the image to ECR:** Authenticate Docker to ECR, tag the image with the repository URI, and push it.
-5. **Create an ECS task definition:** Use the ECR image, set container port 3000, configure the environment variables, and attach a task execution role and task role as needed.
-6. **Create an ECS Fargate service:** Run the task in the selected VPC subnets and security groups.
-7. **Configure the ALB:** Create a target group for the container port, configure health checks, and attach it to the ECS service.
-8. **Configure security groups:** Allow inbound HTTP/HTTPS traffic to the ALB. Allow the ECS task to receive traffic from the ALB security group on the application port. Avoid exposing the task directly to the public internet.
-9. **Verify deployment:** Confirm the ECS task is healthy, ALB targets are healthy, logs are available in CloudWatch, and the chat responds through the ALB DNS name.
+## Future improvements
 
-For a production deployment, use HTTPS with an appropriate certificate, secure secrets management, CloudWatch logs and alarms, and least-privilege IAM permissions. Configure ALB health checks to match an endpoint that the application actually serves.
-
-## Performance Notes
-
-- Retrieval is performed with Boto3 in a worker thread so the synchronous retrieval call does not block the async Gradio event loop.
-- The application requests one Knowledge Base retrieval and then makes one streaming model invocation for each accepted question.
-- End-to-end response time depends on retrieval latency, model latency, network conditions, AWS Region, and the selected model.
-- Streaming improves perceived responsiveness by displaying text as it arrives, but it does not necessarily reduce total generation time.
-- Review CloudWatch logs and application timing before changing retrieval settings or model configuration.
-
-## Current Limitations
-
-- The supported-topic filter relies on keywords and conversation context; it may reject valid questions or accept unrelated questions containing AI/ML terms.
-- The application assumes the Bedrock Knowledge Base has already been configured and populated.
-- The retrieved source location is included in the internal passage text, but the UI does not currently render a dedicated source-citation panel.
-- Prompt instructions alone do not guarantee protection against prompt injection or hallucinations.
-- Authentication, per-user rate limiting, persistent chat history, and formal evaluation are not implemented in this repository.
-- The included Dockerfile is a minimal runtime image; additional production hardening and observability may be needed.
-
-## Future Improvements
-
-- Add structured source citations and retrieval transparency to the UI.
+- Add source citations and retrieval transparency to the chat interface.
 - Add a dedicated health-check endpoint and automated deployment pipeline.
-- Add robust input/output guardrails and prompt-injection tests.
-- Evaluate retrieval quality and answer faithfulness using a repeatable test dataset.
-- Add authentication, rate limiting, and session-aware conversation storage.
-- Add CloudWatch metrics, alarms, tracing, and latency breakdowns.
-- Use HTTPS and managed secrets for deployment.
+- Expand guardrail testing with adversarial and regression test cases.
+- Evaluate retrieval quality and answer faithfulness with a repeatable dataset.
+- Use shared storage for quotas and usage accounting when deploying multiple replicas.
+- Add authentication, persistent session storage, CloudWatch metrics, alarms, and tracing.
+- Configure HTTPS and managed secret storage for hosted deployments.
 
 ## Contributing
 
-Contributions, bug reports, and suggestions are welcome. For significant changes, open an issue first to discuss the proposed improvement.
+Bug reports, suggestions, and pull requests are welcome. For substantial changes, open an issue first to discuss the proposed update.
 
 ## License
 
-No license is currently specified. Add a `LICENSE` file before granting others explicit permission to reuse, modify, or distribute this project.
+No license is currently specified in the repository. Add a `LICENSE` file if you intend to grant others permission to reuse, modify, or distribute the project.
 
 ---
 
-**Built with Python, LangChain, Amazon Bedrock, Gradio, Docker, and AWS ECS Fargate.**
+**Built with Python, LangChain, Amazon Bedrock, LiteLLM, Gradio, and Docker.**
